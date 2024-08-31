@@ -1,5 +1,8 @@
 use std::fs::File;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, BufReader, Write};
+use std::env;
+use std::path::Path;
+
 
 /// main関数
 ///
@@ -7,23 +10,40 @@ use std::io::{self, BufRead, Write};
 /// S0レコードはコンソールに文字列を表示する。
 /// S1/S2/S3レコードはデータをバイナリに書き出す。
 /// それ以外は無視する。
-fn main() -> io::Result<()> {
-    // S-Recordのパス
-    let srec_path = "test/small_srec.mot";
-    // Binaryのパス
-    let bin_path = "test/output.bin";
+fn main() {
 
-    // S-Recordを開く
-    let file = File::open(srec_path)?;
-    let reader = io::BufReader::new(file);
+    // 引数のチェック
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 2 {
+        eprintln!("使用方法：srbin file/path/to/srec");
+        std::process::exit(1);
+    }
 
-    // Binaryを作って開く
-    let mut bin_file = File::create(bin_path)?;
+    // ファイルパス設定
+    let input_path = Path::new(&args[1]);
+    let output_path = input_path.with_extension("bin");
+
+    // 出力ファイルの削除確認
+    if output_path.exists() {
+        println!("{}は既に存在します。削除してもよろしいですか？(y/n)", output_path.display());
+        let mut response = String::new();
+        io::stdin().read_line(&mut response).expect("入力を読み取れませんでした");
+        if response.trim().to_lowercase() != "y" {
+            println!("プログラムを終了します");
+            std::process::exit(0);
+        }
+    }
+
+    // ファイルオープン
+    let mut output_file = File::create(&output_path).expect("出力ファイルを作成できませんでした");
+    let file = File::open(input_path).expect("入力ファイルを開けませんでした");
+    let reader = BufReader::new(file);
 
     // 1行ずつ読み出して処理する
     for line in reader.lines() {
         // 読み出し
-        let line = line?;
+        let line = line.expect("行を読み出せません");
+
 
         // レコードタイプで分岐する
         if line.starts_with("S0") {
@@ -44,15 +64,14 @@ fn main() -> io::Result<()> {
             let data_end = 2 + 2 + 2 * count - 2;    // データレコード終了位置（レコードタイプ + レコード長 + アドレス以降 - SUM）
             let data = &line[data_start..data_end];  // データレコード最初〜最後の文字列
 
+            // 2文字ずつ取り出してバイナリ変換し、ファイルに書く
             for i in (0..data.len()).step_by(2) {
                 let byte = u8::from_str_radix(&data[i..i+2], 16).unwrap();
-                bin_file.write_all(&[byte])?;
+                output_file.write_all(&[byte]).expect("バイナリデータを読み出せません");
             }
         }
         // S5, S6, S7, S8, S9 は無視する
     }
-
-    Ok(())
 }
 
 
